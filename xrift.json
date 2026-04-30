@@ -1,0 +1,9 @@
+{
+  "item": {
+    "distDir": "./dist",
+    "buildCommand": "npm run build",
+    "title": "ポンコツロボット",
+    "description": "頭をクリックすると話しかけられる、少し壊れかけのポンコツロボット「ZOMA-1号」。Ollama で動く小さな AI が、機械音混じりのたどたどしい返事をしてくれます。",
+    "thumbnailPath": "thumbnail.png"
+  }
+}
