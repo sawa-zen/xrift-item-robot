@@ -52,7 +52,7 @@
   "dependencies": {
     "@pmndrs/uikit": "^1.0.64",
     "@react-three/uikit": "^1.0.64",
-    "@xrift/world-components": "^0.39.0",
+    "@xrift/world-components": "^0.40.0",
     "ollama": "^0.6.3"
   }
 }

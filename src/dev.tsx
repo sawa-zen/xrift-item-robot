@@ -11,6 +11,7 @@ import { Canvas } from '@react-three/fiber'
 import { Physics } from '@react-three/rapier'
 import { OrbitControls } from '@react-three/drei'
 import {
+  ItemProvider,
   TextInputProvider,
   createDefaultTextInputImplementation,
 } from '@xrift/world-components'
@@ -32,7 +33,12 @@ const App = () => {
               intensity={1}
               castShadow
             />
-            <Item position={[0, 0, 0]} />
+            <ItemProvider id="zoma-robot-dev-a">
+              <Item position={[-1.2, 0, 0]} />
+            </ItemProvider>
+            <ItemProvider id="zoma-robot-dev-b">
+              <Item position={[1.2, 0, 0]} />
+            </ItemProvider>
             {/* 地面 */}
             <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
               <planeGeometry args={[10, 10]} />

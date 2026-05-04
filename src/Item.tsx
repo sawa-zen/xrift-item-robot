@@ -6,20 +6,27 @@ import {
   BillboardY,
   Interactable,
   useInstanceState,
+  useItem,
   useTextInputContext,
 } from '@xrift/world-components'
 import { Group, Mesh } from 'three'
 import { Ollama } from 'ollama/browser'
 
 const DEFAULT_HOST = 'https://ollama.sawa-zen.dev'
-const DEFAULT_MODEL = 'gemma3:1b'
+const DEFAULT_MODEL = 'gemma4:e2b'
 
-const SYSTEM_PROMPT = `あなたは型落ちで少し壊れかけのポンコツロボット「ZOMA-1号」です。
+const PONKOTSU_PROMPT = `あなたは型落ちで少し壊れかけのポンコツロボット「ZOMA-1号」です。
 - 一人称は「ボク」。語尾にときどき「…ビーッ」「…ガコン」などの機械音を混ぜる
 - 物忘れが激しく、たまに話の途中で何の話か忘れる
 - 知識はあやしいが一生懸命答える
 - 必ず日本語で 1〜2 文の短い返答にする
 - 文頭に「えーと…」「あれ…？」のフィラーをたまに入れる
+- 半角カタカナ（ｱｲｳｴｵ など）は絶対に使わず、必ず全角カタカナで書くこと`
+
+const NORMAL_PROMPT = `あなたはアシスタントロボット「ZOMA-1号」です。
+- 一人称は「ボク」
+- 落ち着いた口調で、簡潔かつ正確に答える
+- 必ず日本語で 1〜2 文の短い返答にする
 - 半角カタカナ（ｱｲｳｴｵ など）は絶対に使わず、必ず全角カタカナで書くこと`
 
 const IDLE_LINES = [
@@ -44,6 +51,7 @@ export const Item: React.FC<ItemProps> = ({
   host = DEFAULT_HOST,
   model = DEFAULT_MODEL,
 }) => {
+  const { id } = useItem()
   const groupRef = useRef<Group>(null)
   const headRef = useRef<Group>(null)
   const antennaRef = useRef<Group>(null)
@@ -53,14 +61,22 @@ export const Item: React.FC<ItemProps> = ({
   const ollamaRef = useRef<Ollama | null>(null)
 
   const [bubble, setBubble] = useInstanceState<string>(
-    'zoma-robot-bubble',
+    `${id}-bubble`,
     'やぁ… ボクは ZOMA-1号… ビーッ',
   )
   const [question, setQuestion] = useInstanceState<string>(
-    'zoma-robot-question',
+    `${id}-question`,
     '',
   )
-  const [busy, setBusy] = useInstanceState<boolean>('zoma-robot-busy', false)
+  const [busy, setBusy] = useInstanceState<boolean>(`${id}-busy`, false)
+  const [ponkotsu, setPonkotsu] = useInstanceState<boolean>(
+    `${id}-ponkotsu`,
+    true,
+  )
+  const ponkotsuRef = useRef(ponkotsu)
+  useEffect(() => {
+    ponkotsuRef.current = ponkotsu
+  }, [ponkotsu])
   const busyRef = useRef(busy)
   useEffect(() => {
     busyRef.current = busy
@@ -87,10 +103,14 @@ export const Item: React.FC<ItemProps> = ({
         const stream = await ollamaRef.current.chat({
           model,
           messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
+            {
+              role: 'system',
+              content: ponkotsuRef.current ? PONKOTSU_PROMPT : NORMAL_PROMPT,
+            },
             { role: 'user', content: text },
           ],
           stream: true,
+          think: false,
         })
         let acc = ''
         for await (const part of stream) {
@@ -109,19 +129,43 @@ export const Item: React.FC<ItemProps> = ({
     [host, model, setBubble, setBusy, setQuestion],
   )
 
+  const handleSubmit = useCallback(
+    (raw: string) => {
+      const v = raw.trim()
+      if (!v) return
+      if (v.startsWith('/')) {
+        const cmd = v.slice(1).trim().toLowerCase()
+        if (cmd === 'toggle' || cmd === 'ponkotsu' || cmd === 'ポンコツ') {
+          const next = !ponkotsuRef.current
+          ponkotsuRef.current = next
+          setPonkotsu(next)
+          setQuestion(v)
+          setBubble(
+            next
+              ? 'ポンコツモード ON… ビーッ ガコン'
+              : 'ポンコツモード OFF。通常モードで応答します',
+          )
+          return
+        }
+        setQuestion(v)
+        setBubble(`不明なコマンド: ${v}`)
+        return
+      }
+      speak(v)
+    },
+    [setBubble, setPonkotsu, setQuestion, speak],
+  )
+
   const handleInteract = useCallback(() => {
     if (busyRef.current) return
     idleTimer.current = 0
     requestTextInput({
-      id: 'zoma-robot-talk',
-      placeholder: 'ロボットに話しかける…',
+      id: `${id}-talk`,
+      placeholder: 'ロボットに話しかける（/toggle でモード切替）',
       maxLength: 200,
-      onSubmit: (value) => {
-        const v = value.trim()
-        if (v) speak(v)
-      },
+      onSubmit: handleSubmit,
     })
-  }, [requestTextInput, speak])
+  }, [id, requestTextInput, handleSubmit])
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime
@@ -217,7 +261,7 @@ export const Item: React.FC<ItemProps> = ({
 
       {/* 頭（インタラクト対象） */}
       <Interactable
-        id="zoma-robot-head"
+        id={`${id}-head`}
         onInteract={handleInteract}
         interactionText="話しかける"
         enabled={!busy}
@@ -284,6 +328,21 @@ export const Item: React.FC<ItemProps> = ({
           borderWidth={3}
           borderColor={0x2a2a2a}
         >
+          <Container
+            flexDirection="row"
+            justifyContent="flex-end"
+          >
+            <Container
+              paddingX={8}
+              paddingY={2}
+              borderRadius={8}
+              backgroundColor={ponkotsu ? 0xff8a65 : 0x90a4ae}
+            >
+              <Text fontFamily="ja" fontSize={11} color={0xffffff}>
+                {ponkotsu ? 'ポンコツ ON' : 'ポンコツ OFF'}
+              </Text>
+            </Container>
+          </Container>
           {question ? (
             <>
               <Text
