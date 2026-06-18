@@ -12,7 +12,7 @@ import {
 import { Group, Mesh } from 'three'
 import { Ollama } from 'ollama/browser'
 
-const DEFAULT_HOST = 'https://ollama.sawa-zen.dev'
+const DEFAULT_HOST = 'https://ollama.ponkotsu-lab.net'
 const DEFAULT_MODEL = 'gemma4:e2b'
 
 const PONKOTSU_PROMPT = `あなたは型落ちで少し壊れかけのポンコツロボット「ZOMA-1号」です。
