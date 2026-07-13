@@ -10,12 +10,72 @@ import {
   useTextInputContext,
 } from '@xrift/world-components'
 import { Group, Mesh } from 'three'
-import OpenAI from 'openai'
 
+// ポンコツ LLM は OpenAI 互換の Chat Completions API。
+// SDK（openai パッケージ）は api.openai.com など多数のドメインを bundle に埋め込み
+// XRift のセキュリティチェックに引っかかるため、fetch で直接叩く。
 const DEFAULT_BASE_URL = 'https://llm.ponkotsu-lab.net'
 const DEFAULT_MODEL = 'ponkotsu'
 // API キーは .env の VITE_PONKOTSU_API_KEY からビルド時に注入する（リポジトリには含めない）
 const DEFAULT_API_KEY = import.meta.env.VITE_PONKOTSU_API_KEY ?? ''
+
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+/**
+ * OpenAI 互換の Chat Completions を SSE ストリームで叩き、
+ * 差分テキストを onDelta で逐次通知する。
+ */
+async function streamChat(
+  baseURL: string,
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+  onDelta: (acc: string) => void,
+): Promise<void> {
+  const res = await fetch(`${baseURL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ model, messages, stream: true }),
+  })
+  if (!res.ok || !res.body) {
+    throw new Error(`ponkotsu-llm request failed: ${res.status}`)
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let acc = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data:')) continue
+      const data = trimmed.slice(5).trim()
+      if (data === '[DONE]') return
+      try {
+        const json = JSON.parse(data)
+        const delta: string = json.choices?.[0]?.delta?.content ?? ''
+        if (delta) {
+          acc += delta
+          onDelta(acc)
+        }
+      } catch {
+        // 不完全な JSON はスキップ
+      }
+    }
+  }
+}
 
 const PONKOTSU_PROMPT = `あなたは型落ちで少し壊れかけのポンコツロボット「ZOMA-1号」です。
 - 一人称は「ボク」。語尾にときどき「…ビーッ」「…ガコン」などの機械音を混ぜる
@@ -62,7 +122,6 @@ export const Item: React.FC<ItemProps> = ({
   const leftEyeRef = useRef<Mesh>(null)
   const rightEyeRef = useRef<Mesh>(null)
   const chestLampRef = useRef<Mesh>(null)
-  const clientRef = useRef<OpenAI | null>(null)
 
   const [bubble, setBubble] = useInstanceState<string>(
     `${id}-bubble`,
@@ -97,33 +156,23 @@ export const Item: React.FC<ItemProps> = ({
     async (text: string) => {
       if (!text || busyRef.current) return
       busyRef.current = true
-      if (!clientRef.current) {
-        clientRef.current = new OpenAI({
-          baseURL,
-          apiKey,
-          dangerouslyAllowBrowser: true,
-        })
-      }
       setBusy(true)
       setQuestion(text)
       setBubble('ガコン…ガコン… 考え、中…')
       try {
-        const stream = await clientRef.current.chat.completions.create({
+        await streamChat(
+          baseURL,
+          apiKey,
           model,
-          messages: [
+          [
             {
               role: 'system',
               content: ponkotsuRef.current ? PONKOTSU_PROMPT : NORMAL_PROMPT,
             },
             { role: 'user', content: text },
           ],
-          stream: true,
-        })
-        let acc = ''
-        for await (const chunk of stream) {
-          acc += chunk.choices[0]?.delta?.content ?? ''
-          setBubble(acc)
-        }
+          (acc) => setBubble(acc),
+        )
       } catch (err) {
         console.error('[ZOMA-1号]', err)
         setBubble('ブーッ… 通信、エラー… ビーッ')
