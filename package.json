@@ -52,7 +52,6 @@
   "dependencies": {
     "@pmndrs/uikit": "^1.0.64",
     "@react-three/uikit": "^1.0.64",
-    "@xrift/world-components": "^0.40.0",
-    "openai": "^6.46.0"
+    "@xrift/world-components": "^0.40.0"
   }
 }
