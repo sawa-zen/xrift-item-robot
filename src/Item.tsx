@@ -10,10 +10,12 @@ import {
   useTextInputContext,
 } from '@xrift/world-components'
 import { Group, Mesh } from 'three'
-import { Ollama } from 'ollama/browser'
+import OpenAI from 'openai'
 
-const DEFAULT_HOST = 'https://ollama.ponkotsu-lab.net'
-const DEFAULT_MODEL = 'gemma4:e2b'
+const DEFAULT_BASE_URL = 'https://llm.ponkotsu-lab.net'
+const DEFAULT_MODEL = 'ponkotsu'
+// API キーは .env の VITE_PONKOTSU_API_KEY からビルド時に注入する（リポジトリには含めない）
+const DEFAULT_API_KEY = import.meta.env.VITE_PONKOTSU_API_KEY ?? ''
 
 const PONKOTSU_PROMPT = `あなたは型落ちで少し壊れかけのポンコツロボット「ZOMA-1号」です。
 - 一人称は「ボク」。語尾にときどき「…ビーッ」「…ガコン」などの機械音を混ぜる
@@ -41,15 +43,17 @@ const IDLE_LINES = [
 export interface ItemProps {
   position?: [number, number, number]
   scale?: number
-  host?: string
+  baseURL?: string
   model?: string
+  apiKey?: string
 }
 
 export const Item: React.FC<ItemProps> = ({
   position = [0, 0, 0],
   scale = 1,
-  host = DEFAULT_HOST,
+  baseURL = DEFAULT_BASE_URL,
   model = DEFAULT_MODEL,
+  apiKey = DEFAULT_API_KEY,
 }) => {
   const { id } = useItem()
   const groupRef = useRef<Group>(null)
@@ -58,7 +62,7 @@ export const Item: React.FC<ItemProps> = ({
   const leftEyeRef = useRef<Mesh>(null)
   const rightEyeRef = useRef<Mesh>(null)
   const chestLampRef = useRef<Mesh>(null)
-  const ollamaRef = useRef<Ollama | null>(null)
+  const clientRef = useRef<OpenAI | null>(null)
 
   const [bubble, setBubble] = useInstanceState<string>(
     `${id}-bubble`,
@@ -93,14 +97,18 @@ export const Item: React.FC<ItemProps> = ({
     async (text: string) => {
       if (!text || busyRef.current) return
       busyRef.current = true
-      if (!ollamaRef.current) {
-        ollamaRef.current = new Ollama({ host })
+      if (!clientRef.current) {
+        clientRef.current = new OpenAI({
+          baseURL,
+          apiKey,
+          dangerouslyAllowBrowser: true,
+        })
       }
       setBusy(true)
       setQuestion(text)
       setBubble('ガコン…ガコン… 考え、中…')
       try {
-        const stream = await ollamaRef.current.chat({
+        const stream = await clientRef.current.chat.completions.create({
           model,
           messages: [
             {
@@ -110,11 +118,10 @@ export const Item: React.FC<ItemProps> = ({
             { role: 'user', content: text },
           ],
           stream: true,
-          think: false,
         })
         let acc = ''
-        for await (const part of stream) {
-          acc += part.message.content
+        for await (const chunk of stream) {
+          acc += chunk.choices[0]?.delta?.content ?? ''
           setBubble(acc)
         }
       } catch (err) {
@@ -126,7 +133,7 @@ export const Item: React.FC<ItemProps> = ({
         idleTimer.current = 0
       }
     },
-    [host, model, setBubble, setBusy, setQuestion],
+    [baseURL, apiKey, model, setBubble, setBusy, setQuestion],
   )
 
   const handleSubmit = useCallback(
